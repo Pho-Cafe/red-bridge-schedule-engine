@@ -1,4 +1,5 @@
 import * as dotenv from 'dotenv';
+import { db } from '../config/firebase';
 
 dotenv.config();
 
@@ -24,14 +25,14 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
     throw new Error('TEAMVIEWER_API_TOKEN environment variable not set');
   }
 
-  const observeListRaw = process.env.TEAMVIEWER_OBSERVE_LIST;
-  if (!observeListRaw) {
-    console.warn('teamviewer_heartbeat: TEAMVIEWER_OBSERVE_LIST not set, checking all devices');
+  const configDoc = await db.doc('config/teamviewer').get();
+  const observeList: string[] | undefined = configDoc.exists ? configDoc.data()?.observeList : undefined;
+
+  if (!observeList || observeList.length === 0) {
+    console.warn('teamviewer_heartbeat: observeList not set in /config/teamviewer, checking all devices');
   }
 
-  const observeSet = observeListRaw
-    ? new Set(observeListRaw.split(',').map((id) => id.trim()))
-    : null;
+  const observeSet = observeList && observeList.length > 0 ? new Set(observeList) : null;
 
   const allDevices = await fetchAllManagedDevices(apiToken);
 
