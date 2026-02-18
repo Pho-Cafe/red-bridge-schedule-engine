@@ -28,8 +28,10 @@ This is a **database-driven cron scheduler** for the Red Bridge platform. It pul
 ## Configuration
 
 Required before running:
-- `src/config/firebase-credentials.json` — Firebase Admin SDK credentials (gitignored)
 - `.env` with:
+  - `FIREBASE_PROJECT_ID` — Firebase project ID
+  - `FIREBASE_CLIENT_EMAIL` — Firebase service account client email
+  - `FIREBASE_PRIVATE_KEY` — Firebase service account private key (newlines as `\n`)
   - `TEAMVIEWER_API_TOKEN` — TeamViewer API token
   - `TIMEZONE` — Timezone for cron jobs (defaults to `UTC`)
 
