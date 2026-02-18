@@ -31,7 +31,7 @@ export class CronScheduler {
         );
         break;
       default:
-        console.warn(`Unknown action "${schedule.action}" for schedule "${schedule.name}"`);
+        console.warn(`Unknown action "${schedule.action}" for schedule "${schedule.name}. Double check the schedule name, or restart deployment if action has been recently implemented."`);
     }
   }
 
