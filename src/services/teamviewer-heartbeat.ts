@@ -1,9 +1,10 @@
-import * as dotenv from 'dotenv';
-import { db } from '../config/firebase';
+import * as dotenv from "dotenv";
+import { db } from "../config/firebase";
 
 dotenv.config();
 
-const TEAMVIEWER_API_URL = 'https://webapi.teamviewer.com/api/v1/managed/devices';
+const TEAMVIEWER_API_URL =
+  "https://webapi.teamviewer.com/api/v1/managed/devices";
 
 interface ManagedDevice {
   id: string;
@@ -22,36 +23,43 @@ interface ManagedDevicesResponse {
 export async function executeTeamviewerHeartbeat(): Promise<void> {
   const apiToken = process.env.TEAMVIEWER_API_TOKEN;
   if (!apiToken) {
-    throw new Error('TEAMVIEWER_API_TOKEN environment variable not set');
+    throw new Error("TEAMVIEWER_API_TOKEN environment variable not set");
   }
 
-  const configDoc = await db.doc('config/teamviewer').get();
-  const observeList: string[] | undefined = configDoc.exists ? configDoc.data()?.observeList : undefined;
+  const configDoc = await db.doc("config/teamviewer").get();
+  const observeList: string[] | undefined = configDoc.exists
+    ? configDoc.data()?.observeList
+    : undefined;
 
   if (!observeList || observeList.length === 0) {
-    console.warn('teamviewer_heartbeat: observeList not set in /config/teamviewer, checking all devices');
+    console.warn(
+      "teamviewer_heartbeat: observeList not set in /config/teamviewer, checking all devices",
+    );
   }
 
-  const observeSet = observeList && observeList.length > 0 ? new Set(observeList) : null;
+  const observeSet =
+    observeList && observeList.length > 0 ? new Set(observeList) : null;
 
   const allDevices = await fetchAllManagedDevices(apiToken);
 
-  const devices = (observeSet
-    ? allDevices.filter((device) => observeSet.has(device.id))
-    : allDevices
+  const devices = (
+    observeSet
+      ? allDevices.filter((device) => observeSet.has(device.id))
+      : allDevices
   ).map((device) => ({
     deviceId: device.id,
     name: device.name,
     online: device.isOnline,
   }));
 
-  console.log(`teamviewer_heartbeat: checked ${devices.length} devices`);
-  for (const device of devices) {
-    console.log(`  ${device.name}: ${device.online ? 'online' : 'offline'}`);
-  }
+  console.log(
+    `teamviewer_heartbeat: checked ${devices.length} devices, ${devices.filter((device) => device.online).length} online`,
+  );
 }
 
-async function fetchAllManagedDevices(apiToken: string): Promise<ManagedDevice[]> {
+async function fetchAllManagedDevices(
+  apiToken: string,
+): Promise<ManagedDevice[]> {
   const allDevices: ManagedDevice[] = [];
   let paginationToken: string | undefined;
 
@@ -65,10 +73,12 @@ async function fetchAllManagedDevices(apiToken: string): Promise<ManagedDevice[]
     });
 
     if (!response.ok) {
-      throw new Error(`TeamViewer API responded with ${response.status}: ${response.statusText}`);
+      throw new Error(
+        `TeamViewer API responded with ${response.status}: ${response.statusText}`,
+      );
     }
 
-    const data = await response.json() as ManagedDevicesResponse;
+    const data = (await response.json()) as ManagedDevicesResponse;
     allDevices.push(...data.resources);
     paginationToken = data.nextPaginationToken || undefined;
   } while (paginationToken);
