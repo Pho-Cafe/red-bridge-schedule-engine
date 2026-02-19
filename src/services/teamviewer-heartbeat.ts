@@ -20,6 +20,12 @@ interface ManagedDevicesResponse {
   resources: ManagedDevice[];
 }
 
+interface DeviceStatus {
+  deviceId: string;
+  name: string;
+  online: boolean;
+}
+
 export async function executeTeamviewerHeartbeat(): Promise<void> {
   const apiToken = process.env.TEAMVIEWER_API_TOKEN;
   if (!apiToken) {
@@ -42,7 +48,7 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
 
   const allDevices = await fetchAllManagedDevices(apiToken);
 
-  const devices = (
+  const devices: DeviceStatus[] = (
     observeSet
       ? allDevices.filter((device) => observeSet.has(device.id))
       : allDevices
@@ -52,9 +58,85 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
     online: device.isOnline,
   }));
 
+  const onlineDevices = devices.filter((d) => d.online);
+  const offlineDevices = devices.filter((d) => !d.online);
+
   console.log(
-    `teamviewer_heartbeat: checked ${devices.length} devices, ${devices.filter((device) => device.online).length} online`,
+    `teamviewer_heartbeat: checked ${devices.length} devices, ${onlineDevices.length} online`,
   );
+
+  await sendTeamsNotification(onlineDevices, offlineDevices);
+}
+
+async function sendTeamsNotification(
+  onlineDevices: DeviceStatus[],
+  offlineDevices: DeviceStatus[],
+): Promise<void> {
+  const webhookUrl = process.env.TEAMS_WEBHOOK_URL;
+  if (!webhookUrl) {
+    console.warn(
+      "teamviewer_heartbeat: TEAMS_WEBHOOK_URL not set, skipping notification",
+    );
+    return;
+  }
+
+  const total = onlineDevices.length + offlineDevices.length;
+  const body: object[] = [
+    {
+      type: "TextBlock",
+      size: "Medium",
+      weight: "Bolder",
+      text: "TeamViewer Device Status",
+    },
+    {
+      type: "TextBlock",
+      text: `${onlineDevices.length} of ${total} devices online`,
+      wrap: true,
+    },
+  ];
+
+  if (offlineDevices.length > 0) {
+    body.push(
+      { type: "TextBlock", weight: "Bolder", text: "⭕ Offline" },
+      {
+        type: "FactSet",
+        facts: offlineDevices.map((d) => ({
+          title: d.name,
+          value: "Offline",
+        })),
+      },
+    );
+  }
+
+  const payload = {
+    type: "message",
+    attachments: [
+      {
+        contentType: "application/vnd.microsoft.card.adaptive",
+        contentUrl: null,
+        content: {
+          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+          type: "AdaptiveCard",
+          version: "1.2",
+          body,
+        },
+      },
+    ],
+  };
+
+  const response = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    throw new Error(
+      `Teams webhook responded with ${response.status}: ${response.statusText}`,
+    );
+  }
+
+  console.log("teamviewer_heartbeat: Teams notification sent");
 }
 
 async function fetchAllManagedDevices(

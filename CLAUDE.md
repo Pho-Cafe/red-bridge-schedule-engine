@@ -33,6 +33,7 @@ Required before running:
   - `FIREBASE_CLIENT_EMAIL` — Firebase service account client email
   - `FIREBASE_PRIVATE_KEY` — Firebase service account private key (newlines as `\n`)
   - `TEAMVIEWER_API_TOKEN` — TeamViewer API token
+  - `TEAMS_WEBHOOK_URL` — Power Automate webhook URL for Teams notifications
   - `TIMEZONE` — Timezone for cron jobs (defaults to `UTC`)
 
 ## Firestore Collections
