@@ -13,3 +13,21 @@ export interface ScheduleTask {
   cronExpression: string;
   task: CronJob;
 }
+
+export interface Incident {
+  deviceId: string;
+  deviceName: string;
+  status: 'open' | 'resolved' | 'interrupted';
+  createdAt: admin.firestore.Timestamp;
+  updatedAt: admin.firestore.Timestamp;
+  resolvedAt?: admin.firestore.Timestamp;
+  updateCount: number;
+}
+
+export type IncidentEventType = 'new' | 'resolved' | 'ongoing' | 'interrupted';
+
+export interface IncidentEvent {
+  type: IncidentEventType;
+  incident: Incident;
+  docId: string;
+}
