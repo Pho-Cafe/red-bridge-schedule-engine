@@ -6,6 +6,13 @@ export interface Schedule {
   cronExpression: string;
   action: string;
   lastRun?: admin.firestore.Timestamp;
+  config?: Record<string, unknown>;
+}
+
+export interface ReportConfig {
+  startHour: number;
+  endHour: number;
+  title?: string;
 }
 
 export interface ScheduleTask {
