@@ -31,6 +31,24 @@ export interface Incident {
   updateCount: number;
 }
 
+export interface IncidentReport {
+  title: string;
+  generatedAt: admin.firestore.Timestamp;
+  timezone: string;
+  window: {
+    startHour: number;
+    endHour: number;
+    startAt: admin.firestore.Timestamp;
+    endAt: admin.firestore.Timestamp;
+  };
+  hasIssues: boolean;
+  newThisWindow: Incident[];
+  ongoingFromBefore: Incident[];
+  resolvedIncidents: Incident[];
+  interruptedIncidents: Incident[];
+  repeatOffenders: { name: string; count: number }[];
+}
+
 export type IncidentEventType = 'new' | 'resolved' | 'ongoing' | 'interrupted';
 
 export interface IncidentEvent {

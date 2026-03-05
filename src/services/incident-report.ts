@@ -1,6 +1,6 @@
 import admin from "firebase-admin";
 import { db } from "../config/firebase";
-import { Incident, ReportConfig } from "../types/schedule";
+import { Incident, IncidentReport, ReportConfig } from "../types/schedule";
 import { sendAdaptiveCard } from "./teams-notification";
 
 function parseReportConfig(
@@ -98,16 +98,44 @@ export async function executeIncidentReport(
     .filter(([, v]) => v.count > 1)
     .map(([, v]) => v);
 
+  const hasAnyIssues =
+    newThisWindow.length > 0 ||
+    ongoingFromBefore.length > 0 ||
+    resolvedIncidents.length > 0 ||
+    interruptedIncidents.length > 0;
+
   console.log(
     `incident_report: ${newThisWindow.length} new, ${ongoingFromBefore.length} ongoing, ` +
       `${resolvedIncidents.length} resolved, ${interruptedIncidents.length} interrupted, ` +
       `${repeatOffenders.length} repeat offenders`,
   );
 
+  const report: IncidentReport = {
+    title,
+    generatedAt: admin.firestore.Timestamp.now(),
+    timezone,
+    window: {
+      startHour: config.startHour,
+      endHour: config.endHour,
+      startAt: startTs,
+      endAt: endTs,
+    },
+    hasIssues: hasAnyIssues,
+    newThisWindow,
+    ongoingFromBefore,
+    resolvedIncidents,
+    interruptedIncidents,
+    repeatOffenders,
+  };
+
+  await writeIncidentReport(report);
+  console.log(`incident_report: "${title}" persisted to Firestore`);
+
   const body = buildReportCard({
     title,
     timeLabel,
     timezone,
+    hasAnyIssues,
     newThisWindow,
     ongoingFromBefore,
     resolvedIncidents,
@@ -175,10 +203,15 @@ function formatTimestamp(ts: admin.firestore.Timestamp, timezone: string): strin
   return fmt.format(ts.toDate());
 }
 
+async function writeIncidentReport(report: IncidentReport): Promise<void> {
+  await db.collection("incident_reports").add(report);
+}
+
 interface ReportCardInput {
   title: string;
   timeLabel: string;
   timezone: string;
+  hasAnyIssues: boolean;
   newThisWindow: Incident[];
   ongoingFromBefore: Incident[];
   resolvedIncidents: Incident[];
@@ -191,6 +224,7 @@ function buildReportCard(input: ReportCardInput): object[] {
     title,
     timeLabel,
     timezone,
+    hasAnyIssues,
     newThisWindow,
     ongoingFromBefore,
     resolvedIncidents,
@@ -212,12 +246,6 @@ function buildReportCard(input: ReportCardInput): object[] {
       spacing: "None",
     },
   ];
-
-  const hasAnyIssues =
-    newThisWindow.length > 0 ||
-    ongoingFromBefore.length > 0 ||
-    resolvedIncidents.length > 0 ||
-    interruptedIncidents.length > 0;
 
   if (!hasAnyIssues) {
     body.push({
