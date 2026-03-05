@@ -2,6 +2,7 @@ import * as dotenv from "dotenv";
 import admin from "firebase-admin";
 import { db } from "../config/firebase";
 import { Incident, IncidentEvent } from "../types/schedule";
+import { sendAdaptiveCard } from "./teams-notification";
 
 dotenv.config();
 
@@ -197,14 +198,6 @@ async function sendTeamsNotification(
   offlineDevices: DeviceStatus[],
   events: IncidentEvent[],
 ): Promise<void> {
-  const webhookUrl = process.env.TEAMS_WEBHOOK_URL;
-  if (!webhookUrl) {
-    console.warn(
-      "teamviewer_heartbeat: TEAMS_WEBHOOK_URL not set, skipping notification",
-    );
-    return;
-  }
-
   const newEvents = events.filter((e) => e.type === "new");
   const resolvedEvents = events.filter((e) => e.type === "resolved");
   const ongoingEvents = events.filter((e) => e.type === "ongoing");
@@ -310,34 +303,7 @@ async function sendTeamsNotification(
     );
   }
 
-  const payload = {
-    type: "message",
-    attachments: [
-      {
-        contentType: "application/vnd.microsoft.card.adaptive",
-        contentUrl: null,
-        content: {
-          $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
-          type: "AdaptiveCard",
-          version: "1.2",
-          body,
-        },
-      },
-    ],
-  };
-
-  const response = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Teams webhook responded with ${response.status}: ${response.statusText}`,
-    );
-  }
-
+  await sendAdaptiveCard(body);
   console.log("teamviewer_heartbeat: Teams notification sent");
 }
 
