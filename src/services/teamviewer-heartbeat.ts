@@ -49,6 +49,13 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
 
   const observeSet = observeList.length > 0 ? new Set(observeList) : null;
 
+  const deviceToLocation = new Map<string, string>();
+  for (const [locationId, deviceIds] of Object.entries(assignments)) {
+    for (const deviceId of deviceIds) {
+      deviceToLocation.set(deviceId, locationId);
+    }
+  }
+
   const allDevices = await fetchAllManagedDevices(apiToken);
 
   const devices: DeviceStatus[] = (
@@ -70,7 +77,7 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
 
   // Fetch open incidents and process incident events
   const openIncidents = await fetchOpenIncidents();
-  const events = processIncidentEvents(devices, openIncidents, observeSet);
+  const events = processIncidentEvents(devices, openIncidents, observeSet, deviceToLocation);
   await writeIncidentEvents(events);
 
   console.log(
@@ -103,6 +110,7 @@ function processIncidentEvents(
   devices: DeviceStatus[],
   openIncidents: Map<string, { docId: string; incident: Incident }>,
   observeSet: Set<string> | null,
+  deviceToLocation: Map<string, string>,
 ): IncidentEvent[] {
   const events: IncidentEvent[] = [];
   const processedDeviceIds = new Set<string>();
@@ -114,12 +122,14 @@ function processIncidentEvents(
     if (!device.online && !existing) {
       // NEW_INCIDENT: device is offline with no open incident
       const now = admin.firestore.Timestamp.now();
+      const locationId = deviceToLocation.get(device.deviceId)!;
       events.push({
         type: "new",
         docId: "", // will be assigned during write
         incident: {
           deviceId: device.deviceId,
           deviceName: device.name,
+          locationId,
           status: "open",
           createdAt: now,
           updatedAt: now,

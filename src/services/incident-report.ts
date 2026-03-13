@@ -1,6 +1,11 @@
 import admin from "firebase-admin";
 import { db } from "../config/firebase";
-import { Incident, IncidentReport, ReportConfig } from "../types/schedule";
+import {
+  Incident,
+  IncidentReport,
+  LocationIncidentSummary,
+  ReportConfig,
+} from "../types/schedule";
 import { sendAdaptiveCard } from "./teams-notification";
 
 function parseReportConfig(
@@ -40,14 +45,14 @@ export async function executeIncidentReport(
 
   console.log(`incident_report: generating "${title}" for ${timeLabel}`);
 
-  // Currently open incidents (still offline)
+  // Currently open devices (still offline)
   const openSnapshot = await db
     .collection("incidents")
     .where("status", "==", "open")
     .get();
   const openIncidents = openSnapshot.docs.map((d) => d.data() as Incident);
 
-  // Resolved during this window
+  // Devices that came back online during this window
   const resolvedSnapshot = await db
     .collection("incidents")
     .where("status", "==", "resolved")
@@ -58,7 +63,7 @@ export async function executeIncidentReport(
     (d) => d.data() as Incident,
   );
 
-  // Interrupted during this window
+  // Devices removed from observe list during this window
   const interruptedSnapshot = await db
     .collection("incidents")
     .where("status", "==", "interrupted")
@@ -104,10 +109,50 @@ export async function executeIncidentReport(
     resolvedIncidents.length > 0 ||
     interruptedIncidents.length > 0;
 
+  // Fetch location names for all locationIds referenced by incidents
+  const allIncidents = [
+    ...newThisWindow,
+    ...ongoingFromBefore,
+    ...resolvedIncidents,
+    ...interruptedIncidents,
+  ];
+  const locationIds = [...new Set(allIncidents.map((i) => i.locationId))];
+  const locationNames = await fetchLocationNames(locationIds);
+
+  // Group incidents by location
+  const locationMap = new Map<string, LocationIncidentSummary>();
+
+  function getOrCreateLocation(locationId: string): LocationIncidentSummary {
+    if (!locationMap.has(locationId)) {
+      locationMap.set(locationId, {
+        locationId,
+        locationName: locationNames.get(locationId) ?? locationId,
+        newThisWindow: [],
+        ongoingFromBefore: [],
+        resolvedIncidents: [],
+        interruptedIncidents: [],
+      });
+    }
+    return locationMap.get(locationId)!;
+  }
+
+  for (const i of newThisWindow) getOrCreateLocation(i.locationId).newThisWindow.push(i);
+  for (const i of ongoingFromBefore) getOrCreateLocation(i.locationId).ongoingFromBefore.push(i);
+  for (const i of resolvedIncidents) getOrCreateLocation(i.locationId).resolvedIncidents.push(i);
+  for (const i of interruptedIncidents) getOrCreateLocation(i.locationId).interruptedIncidents.push(i);
+
+  // Sort: locations with active issues first, then alphabetically
+  const locations = [...locationMap.values()].sort((a, b) => {
+    const aActive = a.newThisWindow.length + a.ongoingFromBefore.length;
+    const bActive = b.newThisWindow.length + b.ongoingFromBefore.length;
+    if (aActive !== bActive) return bActive - aActive;
+    return a.locationName.localeCompare(b.locationName);
+  });
+
   console.log(
     `incident_report: ${newThisWindow.length} new, ${ongoingFromBefore.length} ongoing, ` +
       `${resolvedIncidents.length} resolved, ${interruptedIncidents.length} interrupted, ` +
-      `${repeatOffenders.length} repeat offenders`,
+      `${repeatOffenders.length} repeat offenders across ${locations.length} location(s)`,
   );
 
   const report: IncidentReport = {
@@ -121,10 +166,7 @@ export async function executeIncidentReport(
       endAt: endTs,
     },
     hasIssues: hasAnyIssues,
-    newThisWindow,
-    ongoingFromBefore,
-    resolvedIncidents,
-    interruptedIncidents,
+    locations,
     repeatOffenders,
   };
 
@@ -136,15 +178,28 @@ export async function executeIncidentReport(
     timeLabel,
     timezone,
     hasAnyIssues,
-    newThisWindow,
-    ongoingFromBefore,
-    resolvedIncidents,
-    interruptedIncidents,
+    locations,
     repeatOffenders,
   });
 
   await sendAdaptiveCard(body);
   console.log(`incident_report: "${title}" notification sent`);
+}
+
+async function fetchLocationNames(
+  locationIds: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (locationIds.length === 0) return map;
+
+  const refs = locationIds.map((id) => db.collection("locations").doc(id));
+  const docs = await db.getAll(...refs);
+  for (const doc of docs) {
+    if (doc.exists) {
+      map.set(doc.id, doc.data()?.name ?? doc.id);
+    }
+  }
+  return map;
 }
 
 function getWindowBoundaries(
@@ -212,25 +267,12 @@ interface ReportCardInput {
   timeLabel: string;
   timezone: string;
   hasAnyIssues: boolean;
-  newThisWindow: Incident[];
-  ongoingFromBefore: Incident[];
-  resolvedIncidents: Incident[];
-  interruptedIncidents: Incident[];
+  locations: LocationIncidentSummary[];
   repeatOffenders: { name: string; count: number }[];
 }
 
 function buildReportCard(input: ReportCardInput): object[] {
-  const {
-    title,
-    timeLabel,
-    timezone,
-    hasAnyIssues,
-    newThisWindow,
-    ongoingFromBefore,
-    resolvedIncidents,
-    interruptedIncidents,
-    repeatOffenders,
-  } = input;
+  const { title, timeLabel, timezone, hasAnyIssues, locations, repeatOffenders } = input;
 
   const body: object[] = [
     {
@@ -250,82 +292,51 @@ function buildReportCard(input: ReportCardInput): object[] {
   if (!hasAnyIssues) {
     body.push({
       type: "TextBlock",
-      text: "✅ **All Clear** — No incidents were recorded during this period.",
+      text: "✅ **All Clear** — No offline devices were recorded during this period.",
       wrap: true,
       spacing: "Medium",
     });
     return body;
   }
 
-  if (newThisWindow.length > 0) {
-    body.push(
-      {
-        type: "TextBlock",
-        weight: "Bolder",
-        text: `🔴 New Incidents (${newThisWindow.length})`,
-        spacing: "Medium",
-      },
-      {
-        type: "FactSet",
-        facts: newThisWindow.map((i) => ({
-          title: i.deviceName,
-          value: `Offline since ${formatTimestamp(i.createdAt, timezone)}`,
-        })),
-      },
-    );
-  }
+  for (const loc of locations) {
+    const facts: { title: string; value: string }[] = [];
 
-  if (ongoingFromBefore.length > 0) {
-    body.push(
-      {
-        type: "TextBlock",
-        weight: "Bolder",
-        text: `⭕ Still Offline (${ongoingFromBefore.length})`,
-        spacing: "Medium",
-      },
-      {
-        type: "FactSet",
-        facts: ongoingFromBefore.map((i) => ({
-          title: i.deviceName,
-          value: `Offline since ${formatTimestamp(i.createdAt, timezone)}, ${i.updateCount} checks`,
-        })),
-      },
-    );
-  }
+    for (const i of loc.newThisWindow) {
+      facts.push({
+        title: `🔴 ${i.deviceName}`,
+        value: `Offline since ${formatTimestamp(i.createdAt, timezone)}`,
+      });
+    }
+    for (const i of loc.ongoingFromBefore) {
+      facts.push({
+        title: `⭕ ${i.deviceName}`,
+        value: `Offline since ${formatTimestamp(i.createdAt, timezone)}, ${i.updateCount} checks`,
+      });
+    }
+    for (const i of loc.resolvedIncidents) {
+      facts.push({
+        title: `✅ ${i.deviceName}`,
+        value: `Offline ${formatTimestamp(i.createdAt, timezone)} – ${formatTimestamp(i.resolvedAt!, timezone)}`,
+      });
+    }
+    for (const i of loc.interruptedIncidents) {
+      facts.push({
+        title: `⚠️ ${i.deviceName}`,
+        value: "Removed from observe list",
+      });
+    }
 
-  if (resolvedIncidents.length > 0) {
-    body.push(
-      {
-        type: "TextBlock",
-        weight: "Bolder",
-        text: `✅ Came Back Online (${resolvedIncidents.length})`,
-        spacing: "Medium",
-      },
-      {
-        type: "FactSet",
-        facts: resolvedIncidents.map((i) => ({
-          title: i.deviceName,
-          value: `Offline ${formatTimestamp(i.createdAt, timezone)} – ${formatTimestamp(i.resolvedAt!, timezone)}`,
-        })),
-      },
-    );
-  }
+    if (facts.length === 0) continue;
 
-  if (interruptedIncidents.length > 0) {
     body.push(
       {
         type: "TextBlock",
         weight: "Bolder",
-        text: `⚠️ Interrupted (${interruptedIncidents.length})`,
+        text: `📍 ${loc.locationName}`,
         spacing: "Medium",
       },
-      {
-        type: "FactSet",
-        facts: interruptedIncidents.map((i) => ({
-          title: i.deviceName,
-          value: "Removed from observe list",
-        })),
-      },
+      { type: "FactSet", facts },
     );
   }
 
@@ -334,7 +345,7 @@ function buildReportCard(input: ReportCardInput): object[] {
       {
         type: "TextBlock",
         weight: "Bolder",
-        text: `🔁 Repeat Issues`,
+        text: "🔁 Repeat Offenders",
         spacing: "Medium",
       },
       {
@@ -348,18 +359,20 @@ function buildReportCard(input: ReportCardInput): object[] {
   }
 
   // Summary line
+  const totalNew = locations.reduce((n, l) => n + l.newThisWindow.length, 0);
+  const totalOngoing = locations.reduce((n, l) => n + l.ongoingFromBefore.length, 0);
+  const totalResolved = locations.reduce((n, l) => n + l.resolvedIncidents.length, 0);
+  const totalInterrupted = locations.reduce((n, l) => n + l.interruptedIncidents.length, 0);
+
   const parts: string[] = [];
-  if (newThisWindow.length > 0) parts.push(`${newThisWindow.length} new`);
-  if (ongoingFromBefore.length > 0)
-    parts.push(`${ongoingFromBefore.length} ongoing`);
-  if (resolvedIncidents.length > 0)
-    parts.push(`${resolvedIncidents.length} resolved`);
-  if (interruptedIncidents.length > 0)
-    parts.push(`${interruptedIncidents.length} interrupted`);
+  if (totalNew > 0) parts.push(`${totalNew} new`);
+  if (totalOngoing > 0) parts.push(`${totalOngoing} ongoing`);
+  if (totalResolved > 0) parts.push(`${totalResolved} resolved`);
+  if (totalInterrupted > 0) parts.push(`${totalInterrupted} interrupted`);
 
   body.push({
     type: "TextBlock",
-    text: `**Summary:** ${parts.join(", ")}`,
+    text: `**Summary:** ${parts.join(", ")} across ${locations.length} location(s)`,
     wrap: true,
     spacing: "Medium",
     isSubtle: true,

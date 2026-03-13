@@ -24,11 +24,21 @@ export interface ScheduleTask {
 export interface Incident {
   deviceId: string;
   deviceName: string;
+  locationId: string;
   status: 'open' | 'resolved' | 'interrupted';
   createdAt: admin.firestore.Timestamp;
   updatedAt: admin.firestore.Timestamp;
   resolvedAt?: admin.firestore.Timestamp;
   updateCount: number;
+}
+
+export interface LocationIncidentSummary {
+  locationId: string;
+  locationName: string;
+  newThisWindow: Incident[];
+  ongoingFromBefore: Incident[];
+  resolvedIncidents: Incident[];
+  interruptedIncidents: Incident[];
 }
 
 export interface IncidentReport {
@@ -42,10 +52,7 @@ export interface IncidentReport {
     endAt: admin.firestore.Timestamp;
   };
   hasIssues: boolean;
-  newThisWindow: Incident[];
-  ongoingFromBefore: Incident[];
-  resolvedIncidents: Incident[];
-  interruptedIncidents: Incident[];
+  locations: LocationIncidentSummary[];
   repeatOffenders: { name: string; count: number }[];
 }
 
