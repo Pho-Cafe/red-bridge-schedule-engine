@@ -36,18 +36,18 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
   }
 
   const configDoc = await db.doc("config/teamviewer").get();
-  const observeList: string[] | undefined = configDoc.exists
-    ? configDoc.data()?.observeList
-    : undefined;
+  const assignments: Record<string, string[]> = configDoc.exists
+    ? (configDoc.data()?.assignments ?? {})
+    : {};
+  const observeList: string[] = Object.values(assignments).flat();
 
-  if (!observeList || observeList.length === 0) {
+  if (observeList.length === 0) {
     console.warn(
-      "teamviewer_heartbeat: observeList not set in /config/teamviewer, checking all devices",
+      "teamviewer_heartbeat: assignments not set in /config/teamviewer, checking all devices",
     );
   }
 
-  const observeSet =
-    observeList && observeList.length > 0 ? new Set(observeList) : null;
+  const observeSet = observeList.length > 0 ? new Set(observeList) : null;
 
   const allDevices = await fetchAllManagedDevices(apiToken);
 
