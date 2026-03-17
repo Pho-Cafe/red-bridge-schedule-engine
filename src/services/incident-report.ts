@@ -196,7 +196,7 @@ async function fetchLocationNames(
   const docs = await db.getAll(...refs);
   for (const doc of docs) {
     if (doc.exists) {
-      map.set(doc.id, doc.data()?.name ?? doc.id);
+      map.set(doc.id, doc.data()?.reference ?? doc.id);
     }
   }
   return map;
