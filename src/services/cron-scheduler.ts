@@ -3,6 +3,7 @@ import { db } from '../config/firebase';
 import { Schedule, ScheduleTask } from '../types/schedule';
 import { executeTeamviewerHeartbeat } from './teamviewer-heartbeat';
 import { executeIncidentReport } from './incident-report';
+import { executePrtgHeartbeat } from './prtg-heartbeat';
 
 export class CronScheduler {
   private tasks: Map<string, ScheduleTask> = new Map();
@@ -33,6 +34,11 @@ export class CronScheduler {
         break;
       case 'incident_report':
         executeIncidentReport(schedule.config).catch((err) =>
+          console.error(`Error in ${schedule.name}:`, err)
+        );
+        break;
+      case 'prtg_heartbeat':
+        executePrtgHeartbeat().catch((err) =>
           console.error(`Error in ${schedule.name}:`, err)
         );
         break;

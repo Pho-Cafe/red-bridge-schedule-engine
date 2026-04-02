@@ -21,6 +21,18 @@ export interface ScheduleTask {
   task: CronJob;
 }
 
+export interface PrtgSensor {
+  objid: number;
+  device: string;
+  name: string;
+  status: string;
+  status_raw: number;
+}
+
+export interface PrtgConfig {
+  assignments: Record<string, string[]>;
+}
+
 export interface Incident {
   deviceId: string;
   deviceName: string;
@@ -30,6 +42,7 @@ export interface Incident {
   updatedAt: admin.firestore.Timestamp;
   resolvedAt?: admin.firestore.Timestamp;
   updateCount: number;
+  source?: 'prtg' | 'teamviewer';
 }
 
 export interface LocationIncidentSummary {
