@@ -45,8 +45,11 @@ export async function executePrtgHeartbeat(): Promise<void> {
     `prtg_heartbeat: checked ${sensors.length} sensors, ${upSensors.length} up`,
   );
 
+  const locationIds = Object.keys(config.assignments);
+  const locationNames = await fetchLocationNames(locationIds);
+
   const openIncidents = await fetchOpenPrtgIncidents();
-  const events = processIncidentEvents(sensors, openIncidents, observeSet, sensorToLocation);
+  const events = processIncidentEvents(sensors, openIncidents, observeSet, sensorToLocation, locationNames);
   await writeIncidentEvents(events);
 
   console.log(
@@ -56,7 +59,7 @@ export async function executePrtgHeartbeat(): Promise<void> {
       `${events.filter((e) => e.type === "interrupted").length} interrupted`,
   );
 
-  await sendTeamsNotification(upSensors, downSensors, events);
+  await sendTeamsNotification(upSensors, downSensors, events, locationNames);
 }
 
 async function fetchPrtgSensors(url: string, apiKey: string): Promise<PrtgSensor[]> {
@@ -69,6 +72,20 @@ async function fetchPrtgSensors(url: string, apiKey: string): Promise<PrtgSensor
 
   const data = (await response.json()) as PrtgSensorsResponse;
   return data.sensors;
+}
+
+async function fetchLocationNames(locationIds: string[]): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (locationIds.length === 0) return map;
+
+  const refs = locationIds.map((id) => db.collection("locations").doc(id));
+  const docs = await db.getAll(...refs);
+  for (const doc of docs) {
+    if (doc.exists) {
+      map.set(doc.id, doc.data()?.reference ?? doc.id);
+    }
+  }
+  return map;
 }
 
 async function fetchOpenPrtgIncidents(): Promise<
@@ -93,6 +110,7 @@ function processIncidentEvents(
   openIncidents: Map<string, { docId: string; incident: Incident }>,
   observeSet: Set<string>,
   sensorToLocation: Map<string, string>,
+  locationNames: Map<string, string>,
 ): IncidentEvent[] {
   const events: IncidentEvent[] = [];
   const processedIds = new Set<string>();
@@ -105,13 +123,14 @@ function processIncidentEvents(
 
     if (isDown && !existing) {
       const now = admin.firestore.Timestamp.now();
+      const locationId = sensorToLocation.get(deviceId)!;
       events.push({
         type: "new",
         docId: "",
         incident: {
           deviceId,
-          deviceName: sensor.name,
-          locationId: sensorToLocation.get(deviceId)!,
+          deviceName: locationNames.get(locationId) ?? locationId,
+          locationId,
           status: "open",
           createdAt: now,
           updatedAt: now,
@@ -186,7 +205,10 @@ async function sendTeamsNotification(
   upSensors: PrtgSensor[],
   downSensors: PrtgSensor[],
   events: IncidentEvent[],
+  locationNames: Map<string, string>,
 ): Promise<void> {
+  const displayName = (e: IncidentEvent) =>
+    locationNames.get(e.incident.locationId) ?? e.incident.deviceName;
   const newEvents = events.filter((e) => e.type === "new");
   const resolvedEvents = events.filter((e) => e.type === "resolved");
   const ongoingEvents = events.filter((e) => e.type === "ongoing");
@@ -230,7 +252,7 @@ async function sendTeamsNotification(
       {
         type: "FactSet",
         facts: newEvents.map((e) => ({
-          title: e.incident.deviceName,
+          title: displayName(e),
           value: "Just went down",
         })),
       },
@@ -248,7 +270,7 @@ async function sendTeamsNotification(
       {
         type: "FactSet",
         facts: ongoingEvents.map((e) => ({
-          title: e.incident.deviceName,
+          title: displayName(e),
           value: `Down for ${e.incident.updateCount} checks`,
         })),
       },
@@ -266,7 +288,7 @@ async function sendTeamsNotification(
       {
         type: "FactSet",
         facts: resolvedEvents.map((e) => ({
-          title: e.incident.deviceName,
+          title: displayName(e),
           value: "Back up",
         })),
       },
@@ -284,7 +306,7 @@ async function sendTeamsNotification(
       {
         type: "FactSet",
         facts: interruptedEvents.map((e) => ({
-          title: e.incident.deviceName,
+          title: displayName(e),
           value: "Removed from observe list",
         })),
       },
