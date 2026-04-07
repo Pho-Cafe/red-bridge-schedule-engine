@@ -40,7 +40,7 @@ export class CronScheduler {
         );
         break;
       case 'incident_report':
-        executeIncidentReport(schedule.config).catch((err) =>
+        executeIncidentReport(schedule.name, schedule.config).catch((err) =>
           console.error(`Error in ${schedule.name}:`, err)
         );
         break;

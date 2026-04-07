@@ -23,11 +23,11 @@ function parseReportConfig(
   return {
     startHour: raw.startHour,
     endHour: raw.endHour,
-    title: typeof raw.title === "string" ? raw.title : undefined,
   };
 }
 
 export async function executeIncidentReport(
+  name: string,
   rawConfig: Record<string, unknown> | undefined,
 ): Promise<void> {
   const config = parseReportConfig(rawConfig);
@@ -40,7 +40,7 @@ export async function executeIncidentReport(
   const startTs = admin.firestore.Timestamp.fromDate(start);
   const endTs = admin.firestore.Timestamp.fromDate(end);
 
-  const title = config.title || "Incident Report";
+  const title = name;
   const timeLabel = formatTimeRange(start, end, timezone);
 
   console.log(`incident_report: generating "${title}" for ${timeLabel}`);
