@@ -5,6 +5,7 @@ export interface Schedule {
   name: string;
   cronExpression: string;
   action: string;
+  active: boolean;
   lastRun?: admin.firestore.Timestamp;
   config?: Record<string, unknown>;
 }

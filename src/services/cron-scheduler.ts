@@ -13,16 +13,23 @@ export class CronScheduler {
 
     const schedules = await this.loadSchedules();
 
-    for (const schedule of schedules) {
-      this.addSchedule(schedule);
+    for (const { id, schedule } of schedules) {
+      this.addSchedule(id, schedule);
     }
 
     console.log(`Loaded ${this.tasks.size} schedules`);
   }
 
-  private async loadSchedules(): Promise<Schedule[]> {
+  private async loadSchedules(): Promise<{ id: string; schedule: Schedule }[]> {
     const snapshot = await db.collection('schedules').get();
-    return snapshot.docs.map((doc) => doc.data() as Schedule);
+    return snapshot.docs.map((doc) => ({ id: doc.id, schedule: doc.data() as Schedule }));
+  }
+
+  private async isScheduleActive(docId: string): Promise<boolean> {
+    const doc = await db.collection('schedules').doc(docId).get();
+    if (!doc.exists) return false;
+    const data = doc.data() as Schedule;
+    return data.active !== false;
   }
 
   private executeAction(schedule: Schedule): void {
@@ -47,11 +54,18 @@ export class CronScheduler {
     }
   }
 
-  private addSchedule(schedule: Schedule): void {
+  private addSchedule(docId: string, schedule: Schedule): void {
     try {
       const job = new CronJob(
         schedule.cronExpression,
-        () => this.executeAction(schedule),
+        async () => {
+          const active = await this.isScheduleActive(docId);
+          if (!active) {
+            console.log(`Skipping "${schedule.name}" — schedule is inactive`);
+            return;
+          }
+          this.executeAction(schedule);
+        },
         null,
         true,
         process.env.TIMEZONE || 'UTC'
