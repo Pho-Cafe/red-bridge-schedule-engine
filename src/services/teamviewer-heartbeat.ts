@@ -96,6 +96,7 @@ async function fetchOpenIncidents(): Promise<
   const snapshot = await db
     .collection("incidents")
     .where("status", "==", "open")
+    .where("source", "==", "teamviewer")
     .get();
 
   const map = new Map<string, { docId: string; incident: Incident }>();
@@ -130,6 +131,7 @@ function processIncidentEvents(
           deviceId: device.deviceId,
           deviceName: device.name,
           locationId,
+          source: "teamviewer",
           status: "open",
           createdAt: now,
           updatedAt: now,
