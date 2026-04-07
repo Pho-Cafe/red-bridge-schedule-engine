@@ -43,7 +43,7 @@ export interface Incident {
   updatedAt: admin.firestore.Timestamp;
   resolvedAt?: admin.firestore.Timestamp;
   updateCount: number;
-  source?: 'prtg' | 'teamviewer';
+  source: 'prtg' | 'teamviewer';
 }
 
 export interface LocationIncidentSummary {
