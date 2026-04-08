@@ -29,6 +29,7 @@ function parseReportConfig(
 export async function executeIncidentReport(
   name: string,
   rawConfig: Record<string, unknown> | undefined,
+  notifications: boolean,
 ): Promise<void> {
   const config = parseReportConfig(rawConfig);
   const timezone = process.env.TIMEZONE || "UTC";
@@ -173,17 +174,21 @@ export async function executeIncidentReport(
   await writeIncidentReport(report);
   console.log(`incident_report: "${title}" persisted to Firestore`);
 
-  const body = buildReportCard({
-    title,
-    timeLabel,
-    timezone,
-    hasAnyIssues,
-    locations,
-    repeatOffenders,
-  });
+  if (notifications) {
+    const body = buildReportCard({
+      title,
+      timeLabel,
+      timezone,
+      hasAnyIssues,
+      locations,
+      repeatOffenders,
+    });
 
-  await sendAdaptiveCard(body);
-  console.log(`incident_report: "${title}" notification sent`);
+    await sendAdaptiveCard(body);
+    console.log(`incident_report: "${title}" notification sent`);
+  } else {
+    console.log(`incident_report: "${title}" notifications disabled — skipping Teams message`);
+  }
 }
 
 async function fetchLocationNames(

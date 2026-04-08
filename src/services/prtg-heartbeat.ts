@@ -10,7 +10,7 @@ interface PrtgSensorsResponse {
   sensors: PrtgSensor[];
 }
 
-export async function executePrtgHeartbeat(): Promise<void> {
+export async function executePrtgHeartbeat(notifications: boolean): Promise<void> {
   const prtgUrl = process.env.PRTG_URL;
   const prtgApiKey = process.env.PRTG_API_KEY;
   if (!prtgUrl) throw new Error("PRTG_URL environment variable not set");
@@ -59,7 +59,11 @@ export async function executePrtgHeartbeat(): Promise<void> {
       `${events.filter((e) => e.type === "interrupted").length} interrupted`,
   );
 
-  await sendTeamsNotification(upSensors, downSensors, events, locationNames);
+  if (notifications) {
+    await sendTeamsNotification(upSensors, downSensors, events, locationNames);
+  } else {
+    console.log("prtg_heartbeat: notifications disabled — skipping Teams message");
+  }
 }
 
 async function fetchPrtgSensors(url: string, apiKey: string): Promise<PrtgSensor[]> {

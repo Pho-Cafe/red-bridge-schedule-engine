@@ -25,27 +25,30 @@ export class CronScheduler {
     return snapshot.docs.map((doc) => ({ id: doc.id, schedule: doc.data() as Schedule }));
   }
 
-  private async isScheduleActive(docId: string): Promise<boolean> {
+  private async getScheduleState(docId: string): Promise<{ active: boolean; notifications: boolean }> {
     const doc = await db.collection('schedules').doc(docId).get();
-    if (!doc.exists) return false;
+    if (!doc.exists) return { active: false, notifications: false };
     const data = doc.data() as Schedule;
-    return data.active !== false;
+    return {
+      active: data.active !== false,
+      notifications: data.notifications !== false,
+    };
   }
 
-  private executeAction(schedule: Schedule): void {
+  private executeAction(schedule: Schedule, notifications: boolean): void {
     switch (schedule.action) {
       case 'teamviewer_heartbeat':
-        executeTeamviewerHeartbeat().catch((err) =>
+        executeTeamviewerHeartbeat(notifications).catch((err) =>
           console.error(`Error in ${schedule.name}:`, err)
         );
         break;
       case 'incident_report':
-        executeIncidentReport(schedule.name, schedule.config).catch((err) =>
+        executeIncidentReport(schedule.name, schedule.config, notifications).catch((err) =>
           console.error(`Error in ${schedule.name}:`, err)
         );
         break;
       case 'prtg_heartbeat':
-        executePrtgHeartbeat().catch((err) =>
+        executePrtgHeartbeat(notifications).catch((err) =>
           console.error(`Error in ${schedule.name}:`, err)
         );
         break;
@@ -59,12 +62,15 @@ export class CronScheduler {
       const job = new CronJob(
         schedule.cronExpression,
         async () => {
-          const active = await this.isScheduleActive(docId);
-          if (!active) {
+          const state = await this.getScheduleState(docId);
+          if (!state.active) {
             console.log(`Skipping "${schedule.name}" — schedule is inactive`);
             return;
           }
-          this.executeAction(schedule);
+          if (!state.notifications) {
+            console.log(`"${schedule.name}" — notifications disabled, running without Teams messages`);
+          }
+          this.executeAction(schedule, state.notifications);
         },
         null,
         true,

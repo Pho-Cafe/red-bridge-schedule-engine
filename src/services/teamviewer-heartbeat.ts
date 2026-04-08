@@ -29,7 +29,7 @@ interface DeviceStatus {
   online: boolean;
 }
 
-export async function executeTeamviewerHeartbeat(): Promise<void> {
+export async function executeTeamviewerHeartbeat(notifications: boolean): Promise<void> {
   const apiToken = process.env.TEAMVIEWER_API_TOKEN;
   if (!apiToken) {
     throw new Error("TEAMVIEWER_API_TOKEN environment variable not set");
@@ -87,7 +87,11 @@ export async function executeTeamviewerHeartbeat(): Promise<void> {
       `${events.filter((e) => e.type === "interrupted").length} interrupted`,
   );
 
-  await sendTeamsNotification(onlineDevices, offlineDevices, events);
+  if (notifications) {
+    await sendTeamsNotification(onlineDevices, offlineDevices, events);
+  } else {
+    console.log("teamviewer_heartbeat: notifications disabled — skipping Teams message");
+  }
 }
 
 async function fetchOpenIncidents(): Promise<
